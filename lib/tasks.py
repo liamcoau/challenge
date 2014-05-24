@@ -1,94 +1,182 @@
+#This file is only to be run by celery
+
 from __future__ import absolute_import
 
-import sys
 import datetime
+
 from lib.celery import app as celery
+
 from pymongo import MongoClient
 
 client = MongoClient()
+
 db = client["files"]
+
 entries = db["entries"]
 
-@celery.task
-def _analyze (ID):
-    doc = entries.find_one({"_id": ID})
+SUPPORTED_FORMATS  = ".txt"
 
-    occurences = {}
-    print(doc)
-    for char in doc["text"]:
-        if char in occurences.keys():
-            occurences[char] += 1
-        else:
-            occurences[char] = 1
-
-    occurences = zip(occurences.values(), occurences.keys())
-    print(occurences)
-    occurences = [pair for pair in occurences]
-    print(occurences)
-    occurences.sort()
-    print(occurences)
-    doc["occurences"] = occurences
-    doc["complete"] = True
-    entries.save(doc)
-    print("Completed indexing for entry given with path {0}".format(doc["path"]))
-
+'''Task launched by index to parse the text and optimize it for searchability.
+   Was more important when this was all using my own algorithm, not as
+   necessary now with Mongo text searches.'''
 @celery.task
 def _convert (ID):
+    #Should handle failure on this query
     doc = entries.find_one({"_id": ID})
-    print(doc)
+
+    if not doc:
+        print("Problem opening document with id {0}, exiting...".format(ID))
+        return
+
+    #Currently just setting it up to handle .txt format. Easy to expand to include other formats but want to get this submitted ASAP
     if doc["path"][-4:] == ".txt":
         try:
-            #Opening it in here instead of sending it as a parameter because of a serialization error I was getting.
+            #Automatically opens in read only mode
             file = open(doc["path"])
+
         except FileNotFoundError as error:
             print("File {0} was not found.\nError:\n{1}\nEnding conversion task.".format(doc["path"], error))
+
         except:
             print("Unexpected error in opening file {0}.".format(doc["path"]))
-            raise
-        else:
-            #Retrieving every line from the file and processing it to be search-friendly
-            #Replaced with spaces to avoid words being conjoined
-            #Couldn't replace "\x", getting unicode error
-            lines = [line.replace("\n", " ").replace("\r", " ").replace("\t", " ").replace("\v", " ").replace("\b", "").replace("\a", "").replace("\f", " ").replace("\h", "").strip() for line in file if not line == "\n"]
-            print(lines)
-            #Conjoining the lines into one searchable blob of text
-            text = ""
-            for index in range(len(lines)):                
-                #Don't add an extra space at the top
-                if not index == 0:
-                    #Spaces stripped from ends of line, adding space so words aren't conjoined
-                    text += " "
-                text += lines[index]
-            #Removing consecutive spaces from the text
-            for index in range(len(text)):
-                if text[index] == " ":
-                    if text[index + 1] == " ":
-                        del text[index + 1]
-            print(text)
-            doc["text"] = text
-            entries.save(doc)
-            _analyze(ID)
-    else:
-        print("Format of document at {0} is not currently supported. Please use .txt".format(doc["path"]))
 
+            raise
+
+        else:
+            '''Retrieving every line from the file and processing it to be search-friendly
+               Replaced with spaces to avoid words being conjoined'''
+               #Couldn't replace "\x", getting unicode error
+               #Including the line above in the multi-line comment was causing an error
+            lines = [line.replace("\n", " ").replace("\r", " ").replace("\t", " ").replace("\v", " ").replace("\b", "").replace("\a", "").replace("\f", " ").replace("\h", "").strip() for line in file if not line == "\n"]
+
+            #Conjoining the lines into one searchable lump of text
+            text = " ".join(lines)
+
+            #Removing consecutive spaces from the text
+            while not text.find("  ") == -1:
+                #Couldn't use str.replace("  ", " "), would result in never exiting loop.
+                split = text.partition("  ")
+
+                text = " ".join([split[0], split[2]])
+
+            doc["text"] = text
+
+            doc["complete"] = True
+
+            print(doc)
+
+            entries.save(doc)
+
+            file.close()
+
+            print("Completed indexing for entry given with path {0}".format(doc["path"]))
+
+    else:
+        print("Format of document at {0} is not currently supported. Please use ".format(doc["path"]) + SUPPORTED_FORMATS)
+
+#Task called by command line interface to index files for searching.
 @celery.task
-def index (path):
+def index (path, meta):
+    #Forward slashes will always work with open()
+    path.replace("\\", "/")
+
+    #Ensuring that important fields are text searchable by Mongo and weighting their importance
+    entries.ensure_index([("title", "text"), ("name", "text"), ("text", "text"), ("tags", "text")], weights={"title": 10, "name": 10, "text": 1, "tags": 5})
+
+    #Retrieving the name of the file and its extension
+    fileName = path[path.rfind("/") + 1:]
+
+    #Creating a string out of the tags given to the file
+    tags = " ".join(meta["tags"])
+
     document = {
-        "text": None,
-        "occurences": None,
+        #Can be "", optional
+        "title": meta["title"],
+
+        #Simply the name of the file
+        "name": fileName,
+
+        #Text is parsed then added by _convert task
+        "text": "",
+
+        #If tags are given then they end up in a string with a space delimeter here
+        "tags": tags,
+
+        #Path the file from the directory of indexsearch.py
         "path": path,
+
+        #Time of indexing
         "date": datetime.datetime.utcnow(),
+        
+        #Used to prevent this document from being searched before _convert finishes this entry
         "complete": False
     }
+
+    #Inserts the document and sends the _id to _convert
     _convert.delay(entries.insert(document))
 
+#Task used to search all file entries and return results
 @celery.task
-def search (phrase):
-    pass
-    
+def search (phrase, sort="relevance", resultFilter=None, filterData=None):
+    #Turns the Mongo query results into readable results to send back to the command line interface.
+    def results (matches, sort, resultFilter, filterData):
+        #If the search turns up any results...
+        if len(matches) > 0:
+            #Stores all the strings sent back to command line
+            results = []
+
+            #If not the default sort that Mongo essentially does...
+            if not sort == "relevance":
+                #Not implemented yet
+                if sort == "date-new":
+                    pass
+                
+                #Not implemented yet
+                elif sort == "date-old":
+                    pass
+
+                else:
+                    raise NotImplementedError("Sort method {0} has not been implemented.".format(sort))
+
+            if resultFilter == "type":
+                #Keeps indexes of results that are scrubbed out by the filter
+                filtered = []
+
+                for index in range(len(matches)):
+                    match = matches[index]
+
+                    if not match["obj"]["name"].find(".") == -1:
+                        #Matching the file extension
+                        for extensionFilter in filterData:
+                            if match["obj"]["name"][match["obj"]["name"].rfind("."):] == extensionFilter:
+                                filtered.append(index)
+
+                #Highest indexes first
+                filtered.reverse()
+
+                #Delete filtered results
+                for index in filtered:
+                    del matches[index]
+
+            #Create a report for each result
+            for index in range(len(matches)):
+                match = matches[index]
+
+                #If the entry was given a title, use it otherwise only the file path.
+                results.append("{0} - Match Coefficient: {1}\n".format(match["obj"]["title"] + " (" + match["obj"]["path"] + ")" if not match["obj"]["title"] == "" else match["obj"]["path"], match["score"]))
+
+            #If all results got removed by the filter...
+            if len(results) < 1:
+                results = "No matches found for search of {0}\n".format(phrase)
+            
+            return results
+
+        #If there were no results in the first place...
+        else:
+            return "No matches found for search of {0}\n".format(phrase)
+
+    #Search task returns results from call of results function which was given the Mongo search, to the command line interface
+    return(results(db.command("text", "entries", search=phrase, filter={"complete": True}, projection={"complete": False})["results"], sort, resultFilter, filterData))
 
 if __name__ == "__main__":
-    print("This file is not meant to be run. Passing execution of command to challenge.py. Please use challenge.py in the future.")
-    from sys import argv
-    from challenge import run
-    run(argv)
+    print("This file only meant for celery tasks. Do not attempt to run it.")

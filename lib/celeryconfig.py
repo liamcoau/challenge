@@ -1,6 +1,5 @@
 CELERY_MONGODB_BACKEND_SETTINGS = {
-    "database": "files"#,
-    #"taskmeta_collection": "stock_taskmeta_collection"
+    "database": "files"
 }
 
 CELERY_ACCEPT_CONTENT = [
