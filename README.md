@@ -9,13 +9,13 @@ You can also tag the files as a way of categorizing them.
 
 Available commands:
 
-  INDEX path [title] [+tags]: Adds file in the path to the list of searchable
+    INDEX path [title] [+tags]: Adds file in the path to the list of searchable
   
                               files with a title and a number of
                               
                               descriptor tags optional
                               
-  SEARCH phrase             : Searches for occurences of the phrase(s) in all
+    SEARCH phrase             : Searches for occurences of the phrase(s) in all
   
                               indexed files and prints out occurences.
                               
@@ -29,15 +29,19 @@ Available commands:
          
                               the given extension(s).
                               
-  HELP                      : Gives info on commands.
+    HELP                      : Gives info on commands.
   
 
 Note that all paths should be given using forward slashes, on all platforms.
 
 This project requires:
+
 python >= 3.3.1
+
 mongodb >= 2.6.1
+
 celery >= 3.1.11
+
 pymongo >= 2.7
 
 To use,
