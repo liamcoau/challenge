@@ -36,15 +36,7 @@ Available commands:
 
 Note that all paths should be given using forward slashes, on all platforms.
 
-This project requires:
-
-python >= 3.3.1
-
-mongodb >= 2.6.1
-
-celery >= 3.1.11
-
-pymongo >= 2.7
+To install the requirements, navigate to the directory for challenge run "pip install -r requirements.txt"
 
 To use,
 
