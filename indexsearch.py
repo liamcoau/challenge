@@ -16,7 +16,8 @@ helpInfo += "         [-s date new/old]  - Sort results based on the date they w
 helpInfo += "                              newest first or oldest first.\n"
 helpInfo += "         [-f type [+ext.]]  - Filter results for only files with\n"
 helpInfo += "                              the given extension(s).\n"
-helpInfo += "  HELP                      : Gives info on commands."
+helpInfo += "  HELP                      : Gives info on commands.\n"
+helpInfo += "  *All file paths should use forward slashes (/)
 
 #Message printed out by a faulty search command.
 badExpression = "Improper search expression. Defaulting to only search phrase."
