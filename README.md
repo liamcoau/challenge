@@ -11,23 +11,23 @@ Available commands:
 
     INDEX path [title] [+tags]: Adds file in the path to the list of searchable
   
-                              files with a title and a number of
+                                files with a title and a number of
                               
-                              descriptor tags optional
+                                descriptor tags optional
                               
     SEARCH phrase             : Searches for occurences of the phrase(s) in all
   
-                              indexed files and prints out occurences.
+                                indexed files and prints out occurences.
                               
-         [-s relevance]     - (Default) Sorts results based on search ranking.
+           [-s relevance]     - (Default) Sorts results based on search ranking.
          
-         [-s date new/old]  - Sort results based on the date they were indexed,
+           [-s date new/old]  - Sort results based on the date they were indexed,
          
-                              newest first or oldest first.
+                                newest first or oldest first.
                               
-         [-f type [+ext.]]  - Filter results for only files with
+           [-f type [+ext.]]  - Filter results for only files with
          
-                              the given extension(s).
+                                the given extension(s).
                               
     HELP                      : Gives info on commands.
   
