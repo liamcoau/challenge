@@ -7,6 +7,8 @@ It allows you to index files then search for a phrase in all of the indexed file
 Files you index can be given a title useful for finding them instead of just the name of the file.
 You can also tag the files as a way of categorizing them.
 
+Currently supported file types: .txt
+
 Available commands:
 
     INDEX path [title] [+tags]: Adds file in the path to the list of searchable
