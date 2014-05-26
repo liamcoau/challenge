@@ -21,9 +21,9 @@ SUPPORTED_FORMATS  = ".txt"
    necessary now with Mongo text searches.'''
 @celery.task
 def _convert (ID):
-    #Should handle failure on this query
     doc = entries.find_one({"_id": ID})
 
+    #In case the search fails
     if not doc:
         print("Problem opening document with id {0}, exiting...".format(ID))
         return
@@ -125,21 +125,55 @@ def search (phrase, sort="relevance", resultFilter=None, filterData=None):
             #Stores all the strings sent back to command line
             results = []
 
-            #If not the default sort that Mongo essentially does...
             if not sort == "relevance":
-                #Not implemented yet
                 if sort == "date-new":
-                    pass
+                    if len(matches) > 1:
+                        #Create a list of the dates of each entry to sort with...
+                        dates = []
+                        
+                        for match in matches:
+                            dates.append(match["obj"]["date"])
+
+                        #Create a zip object of two-tuples, t[0] = date, t[1] = match
+                        matches = zip(dates, matches)
+
+                        #Extracting the two-tuples from the zip object into a list
+                        matches = [pair for pair in matches]
+
+                        #Sorts based on the first element of the two-tuple, the date. Smallest to largest (Oldest to newest)
+                        matches.sort()
+                        
+                        #Same as date-old but everything gets reversed
+                        matches.reverse()
+
+                        #Taking just the match object of the two-tuple with the date
+                        matches = [match[1] for match in matches]
                 
-                #Not implemented yet
                 elif sort == "date-old":
-                    pass
+                    if len(matches) > 1:
+                        #Create a list of the dates of each entry to sort with...
+                        dates = []
+                        
+                        for match in matches:
+                            dates.append(match["obj"]["date"])
+
+                        #Create a zip object of two-tuples, t[0] = date, t[1] = match
+                        matches = zip(dates, matches)
+
+                        #Extracting the two-tuples from the zip object into a list
+                        matches = [pair for pair in matches]
+
+                        #Sorts based on the first element of the two-tuple, the date. Smallest to largest (Oldest to newest)
+                        matches.sort()
+
+                        #Taking just the match object of the two-tuple with the date
+                        matches = [match[1] for match in matches]
 
                 else:
                     raise NotImplementedError("Sort method {0} has not been implemented.".format(sort))
 
             if resultFilter == "type":
-                #Keeps indexes of results that are scrubbed out by the filter
+                #Keeps indexes of matches that are scrubbed out by the filter
                 filtered = []
 
                 for index in range(len(matches)):
@@ -148,7 +182,7 @@ def search (phrase, sort="relevance", resultFilter=None, filterData=None):
                     if not match["obj"]["name"].find(".") == -1:
                         #Matching the file extension
                         for extensionFilter in filterData:
-                            if match["obj"]["name"][match["obj"]["name"].rfind("."):] == extensionFilter:
+                            if not match["obj"]["name"][match["obj"]["name"].rfind("."):] == extensionFilter:
                                 filtered.append(index)
 
                 #Highest indexes first
@@ -162,8 +196,13 @@ def search (phrase, sort="relevance", resultFilter=None, filterData=None):
             for index in range(len(matches)):
                 match = matches[index]
 
-                #If the entry was given a title, use it otherwise only the file path.
-                results.append("{0} - Match Coefficient: {1}\n".format(match["obj"]["title"] + " (" + match["obj"]["path"] + ")" if not match["obj"]["title"] == "" else match["obj"]["path"], match["score"]))
+                if sort == "relevance":
+                    #If the entry was given a title, use it otherwise only the file path.
+                    results.append("{0} - Match Coefficient: {1}\n".format(match["obj"]["title"] + " (" + match["obj"]["path"] + ")" if not match["obj"]["title"] == "" else match["obj"]["path"], match["score"]))
+
+                elif sort == "date-new" or sort == "date-old":
+                    #If the entry was given a title, use it otherwise only the file path.
+                    results.append("{0} - Date indexed: {1}\n".format(match["obj"]["title"] + " (" + match["obj"]["path"] + ")" if not match["obj"]["title"] == "" else match["obj"]["path"], match["obj"]["date"]))
 
             #If all results got removed by the filter...
             if len(results) < 1:
