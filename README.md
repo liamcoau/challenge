@@ -36,15 +36,27 @@ Available commands:
 
 Note that all paths should be given using forward slashes, on all platforms.
 
-To install the requirements, navigate to the directory for challenge run "pip install -r requirements.txt"
+To install the requirements, navigate to the directory for challenge and run:
+```bash
+pip install -r requirements.txt
+```
 
 To use,
 
-In the command line, run "mongod" to start mongodb.
+In the command line, and start mongodb:
+```bash
+mongod
+```
 
-Navigate to the directory for challenge, and run "celery worker --app=lib -l info" in the command line to start the celery task server.
+Navigate to the directory for challenge, and start the celery task server :
+```bash
+celery worker --app=lib -l info
+```
 
-Navigate to the directory for challenge, and from there run "python indexsearch.py [parameters]..." to use the project.
+Navigate to the directory for challenge, and to use the project:
+```bash
+python indexsearch.py [parameters]...
+```
 
 Examples:
 
