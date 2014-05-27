@@ -4,9 +4,13 @@ from __future__ import absolute_import
 
 import datetime
 
+import json
+
 from lib.celery import app as celery
 
 from pymongo import MongoClient
+
+#Access the database for the files
 
 client = MongoClient()
 
@@ -14,13 +18,14 @@ db = client["files"]
 
 entries = db["entries"]
 
-SUPPORTED_FORMATS  = ".txt"
+SUPPORTED_FORMATS  = ".txt or .json"
 
-'''Task launched by index to parse the text and optimize it for searchability.
-   Was more important when this was all using my own algorithm, not as
-   necessary now with Mongo text searches.'''
+#Tasks
+
+#_convert_txt and _convert_json are launched by index to parse the file and optimize it for searchability.
+
 @celery.task
-def _convert (ID):
+def _convert_txt (ID):
     doc = entries.find_one({"_id": ID})
 
     #In case the search fails
@@ -28,51 +33,74 @@ def _convert (ID):
         print("Problem opening document with id {0}, exiting...".format(ID))
         return
 
-    #Currently just setting it up to handle .txt format. Easy to expand to include other formats but want to get this submitted ASAP
-    if doc["path"][-4:] == ".txt":
-        try:
-            #Automatically opens in read only mode
-            file = open(doc["path"])
+    try:
+        #Automatically opens in read only mode
+        file = open(doc["path"])
 
-        except FileNotFoundError as error:
-            print("File {0} was not found.\nError:\n{1}\nEnding conversion task.".format(doc["path"], error))
+    except FileNotFoundError as error:
+        print("File {0} was not found.\nError:\n{1}\nEnding conversion task.".format(doc["path"], error))
 
-        except:
-            print("Unexpected error in opening file {0}.".format(doc["path"]))
+    except:
+        print("Unexpected error in opening file {0}.".format(doc["path"]))
 
-            raise
-
-        else:
-            '''Retrieving every line from the file and processing it to be search-friendly
-               Replaced with spaces to avoid words being conjoined'''
-               #Couldn't replace "\x", getting unicode error
-               #Including the line above in the multi-line comment was causing an error
-            lines = [line.replace("\n", " ").replace("\r", " ").replace("\t", " ").replace("\v", " ").replace("\b", "").replace("\a", "").replace("\f", " ").replace("\h", "").strip() for line in file if not line == "\n"]
-
-            #Conjoining the lines into one searchable lump of text
-            text = " ".join(lines)
-
-            #Removing consecutive spaces from the text
-            while not text.find("  ") == -1:
-                #Couldn't use str.replace("  ", " "), would result in never exiting loop.
-                split = text.partition("  ")
-
-                text = " ".join([split[0], split[2]])
-
-            doc["text"] = text
-
-            doc["complete"] = True
-
-            print(doc)
-
-            entries.save(doc)
-
-            file.close()
-
-            print("Completed indexing for entry given with path {0}".format(doc["path"]))
+        raise
 
     else:
-        print("Format of document at {0} is not currently supported. Please use ".format(doc["path"]) + SUPPORTED_FORMATS)
+        '''Retrieving every line from the file and processing it to be search-friendly
+        Replaced with spaces to avoid words being conjoined'''
+        #Couldn't replace "\x", getting unicode error
+        #Including the line above in the multi-line comment was causing an error
+        lines = [line.replace("\n", " ").replace("\r", " ").replace("\t", " ").replace("\v", " ").replace("\b", "").replace("\a", "").replace("\f", " ").replace("\h", "").strip() for line in file if not line == "\n"]
+
+        #Conjoining the lines into one searchable lump of text
+        text = " ".join(lines)
+
+        #Removing consecutive spaces from the text
+        while not text.find("  ") == -1:
+            #Couldn't use str.replace("  ", " "), would result in never exiting loop.
+            split = text.partition("  ")
+
+            text = " ".join([split[0], split[2]])
+
+        doc["text"] = text
+
+        doc["complete"] = True
+
+        print(doc)
+
+        entries.save(doc)
+
+        file.close()
+
+        print("Completed indexing for entry given with path {0}".format(doc["path"]))
+
+
+
+@celery.task
+def _convert_json (entry, path, fileName):
+    doc = {
+        "title": entry["title"],
+
+        #Simply the name of the file
+        "name": fileName,
+
+        "text": entry["text"],
+
+        "tags": entry["tags"],
+
+        #Path the file relative to the directory of indexsearch.py or absolute
+        "path": path,
+
+        #Time of indexing
+        "date": datetime.datetime.utcnow(),
+        
+        #Used to prevent this document from being searched before _convert_txt finishes this entry, not necessary here
+        "complete": True
+    }
+
+    entries.insert(doc)
+
+
 
 #Task called by command line interface to index files for searching.
 @celery.task
@@ -89,31 +117,76 @@ def index (path, meta):
     #Creating a string out of the tags given to the file
     tags = " ".join(meta["tags"])
 
-    document = {
-        #Can be "", optional
-        "title": meta["title"],
+    #Currently just setting it up to handle .txt and .json formats. Easy to expand to include other formats but want to get this submitted ASAP
 
-        #Simply the name of the file
-        "name": fileName,
+    #Handle .txt files
+    if path[-4:] == ".txt":
 
-        #Text is parsed then added by _convert task
-        "text": "",
+        document = {
+            #Can be "", optional
+            "title": meta["title"],
 
-        #If tags are given then they end up in a string with a space delimeter here
-        "tags": tags,
+            #Simply the name of the file
+            "name": fileName,
 
-        #Path the file from the directory of indexsearch.py
-        "path": path,
+            #Text is parsed then added by _convert_txt task
+            "text": "",
 
-        #Time of indexing
-        "date": datetime.datetime.utcnow(),
+            #If tags are given then they end up in a string with a space delimeter here
+            "tags": tags,
+
+            #Path the file relative to the directory of indexsearch.py or absolute
+            "path": path,
+
+            #Time of indexing
+            "date": datetime.datetime.utcnow(),
         
-        #Used to prevent this document from being searched before _convert finishes this entry
-        "complete": False
-    }
+            #Used to prevent this document from being searched before _convert_txt finishes this entry
+            "complete": False
+        }
 
-    #Inserts the document and sends the _id to _convert
-    _convert.delay(entries.insert(document))
+        #Inserts the document and sends the _id to _convert
+        _convert.delay(entries.insert(document))
+
+    #Handle .json files
+    elif path[-5:] == ".json":
+        try:
+            #Automatically opens in read only mode
+            file = open(path)
+
+        except FileNotFoundError as error:
+            print("File {0} was not found.\nError:\n{1}\nEnding conversion task.".format(path, error))
+
+        except:
+            print("Unexpected error in opening file {0}.".format(path))
+
+            raise
+
+        else:
+            #Using python's json module
+            json_file = json.load(file)
+
+            if "entries" in json_file.keys():
+                if type(json_file["entries"]) is list:
+                    for entry in json_file["entries"]:
+                        if "title" in entry.keys() and "text" in entry.keys() and "tags" in entry.keys():
+                            _convert_json(entry, path, fileName)
+
+                        else:
+                            print("Entry {0} in file at path {1} did not have all required fields, out of title, text and tags".format(entry, path))
+
+                else:
+                    print("File at path {0} did not follow the template for json files, value for key 'entries' was not a list/array".format(path))
+
+            else:
+                print(".json file at {0} did not have required keys 'title', 'text', and 'tags'.".format(doc["path"]))
+
+            file.close()
+
+    else:
+        print("Format of document at {0} is not currently supported. Please use ".format(doc["path"]) + SUPPORTED_FORMATS)
+
+
 
 #Task used to search all file entries and return results
 @celery.task
